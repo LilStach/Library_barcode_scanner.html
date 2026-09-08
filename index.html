@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Library Scanner</title>
+
+<script src="https://unpkg.com/@zxing/library@latest"></script>
+
+<style>
+body{
+font-family:Arial;
+background:#1e1e1e;
+color:white;
+text-align:center;
+}
+
+video{
+width:320px;
+border:4px solid #ff008c;
+border-radius:10px;
+margin-top:15px;
+}
+
+input{
+font-size:20px;
+padding:10px;
+width:250px;
+margin:10px;
+color:#ff008c;
+}
+
+button{
+font-size:16px;
+background-color:white;
+padding:8px 16px;
+margin:5px;
+color:#ff008c;
+}
+
+#status{
+font-size:22px;
+margin-top:10px;
+color:#ff008c;
+}
+
+.bookCard{
+background:#2b2b2b;
+border-radius:10px;
+padding:10px;
+margin:10px;
+display:inline-block;
+width:200px;
+}
+
+.bookCard img{
+width:120px;
+border-radius:5px;
+margin-top:5px;
+}
+
+#stats{
+margin-top:20px;
+background:#2a2a2a;
+padding:10px;
+border-radius:10px;
+}
+</style>
+</head>
+
+<body>
+
+<h1 style="font-size:50px;color:white;">Library Scanner</h1>
+
+<video id="video"></video>
+<br>
+
+<button onclick="startScanner()">Start Camera Scanner</button>
+<button onclick="setMode('checkout')">Checkout Mode</button>
+<button onclick="setMode('checkin')">Check-In Mode</button>
+<button onclick="resetSystem()">Reset</button>
+
+<br>
+
+<input id="manualInput" placeholder="Type number">
+<button onclick="manualEntry()">Submit</button>
+
+<div id="status">Scan or enter library card</div>
+
+<h2>Books</h2>
+<div id="list"></div>
+
+<div id="stats">
+<h3>📊 Library Stats</h3>
+<div id="statText">No checkouts yet</div>
+</div>
+
+<audio id="beep">
+<source src="https://www.soundjay.com/buttons/beep-07.wav">
+</audio>
+
+<script>
+const codeReader = new ZXing.BrowserBarcodeReader();
+
+const cards={
+"1587":"Mike Stachowiak",
+"2290":"Jessie Stachowiak",
+"1902":"Mila Stachowiak",
+"7865":"Bianca Nickels",
+"3753":"Sofia Stachowiak",
+"6745":"Fiona Nickels",
+"9952":"Bari Shafer"
+}
+
+const books={
+"2964910": {title:"Giraffes Can't Dance!", cover:"https://covers.openlibrary.org/b/isbn/0439287209-M.jpg"},
+"4729681": {title:"Europe Adventures", cover:"https://upload.wikimedia.org/wikipedia/commons/8/80/Europe_map.png"},
+"4729812": {title:"Doctor De Soto", cover:"https://covers.openlibrary.org/b/isbn/0374311362-M.jpg"},
+"7864534": {title:"Scare School 1", cover:"https://covers.openlibrary.org/b/isbn/0448450601-M.jpg"},
+"7619365": {title:"Judy Moody 1", cover:"https://covers.openlibrary.org/b/isbn/0763603628-M.jpg"},
+"7865874": {title:"Cloudy with a Chance of Meatballs", cover:"https://covers.openlibrary.org/b/isbn/0689707495-M.jpg"},
+"6284629": {title:"Nobody Hugs a Cactus", cover:"https://covers.openlibrary.org/b/isbn/1534415006-M.jpg"},
+"6288629": {title:"The Penderwicks", cover:"https://covers.openlibrary.org/b/isbn/0440869441-M.jpg"}
+}
+
+let stats = {};
+let currentUser = null;
+let mode = "checkout";
+let checkedOut = {};
+
+for(let b in books){ stats[b]=0; }
+
+function speak(text){ speechSynthesis.speak(new SpeechSynthesisUtterance(text)); }
+
+function dueDate(){
+  let d=new Date();
+  d.setDate(d.getDate()+14);
+  return d.toLocaleDateString();
+}
+
+function updateStats(){
+  let total=0;
+  let text="";
+  for(let b in stats){ total+=stats[b]; }
+  text+="Total Checkouts: "+total+"<br><br>";
+  let sorted=Object.entries(stats).sort((a,b)=>b[1]-a[1]);
+  text+="Most Popular Books:<br>";
+  sorted.slice(0,5).forEach(b=>{
+    text+=books[b[0]].title+" — "+b[1]+"<br>";
+  });
+  document.getElementById("statText").innerHTML=text;
+}
+
+function setMode(m){
+  mode=m;
+  document.getElementById("status").textContent=
+    (currentUser?currentUser:"User")+" — "+
+    (mode=="checkout"?"Checkout Mode":"Check-In Mode");
+}
+
+function processCode(code){
+  document.getElementById("beep").play();
+
+  if(!currentUser){
+    if(cards[code]){
+      currentUser=cards[code];
+      document.getElementById("status").textContent="Welcome "+currentUser;
+      speak("Welcome "+currentUser);
+    } else {
+      document.getElementById("status").textContent="Unknown library card";
+    }
+    return;
+  }
+
+  if(!books[code]){
+    document.getElementById("status").textContent="Unknown Book";
+    return;
+  }
+
+  let info=books[code];
+  let div=document.createElement("div");
+  div.className="bookCard";
+
+  if(mode=="checkout"){
+    if(!checkedOut[code]){
+      let due=dueDate();
+      checkedOut[code]={user:currentUser, due:due};
+      stats[code]++;
+      div.innerHTML="<b>"+info.title+"</b><br>Borrower: "+currentUser+"<br>Due: "+due+"<br><img src='"+info.cover+"'>";
+      speak(info.title+" checked out");
+    }
+  } else {
+    delete checkedOut[code];
+    div.innerHTML="<b>"+info.title+"</b><br>Returned<br><img src='"+info.cover+"'>";
+    speak(info.title+" returned");
+  }
+
+  document.getElementById("list").appendChild(div);
+  updateStats();
+}
+
+function startScanner(){
+  codeReader.decodeFromVideoDevice(null,'video',(result,err)=>{
+    if(result){ processCode(result.text); }
+  });
+}
+
+function manualEntry(){
+  let code=document.getElementById("manualInput").value.trim();
+  document.getElementById("manualInput").value="";
+  processCode(code);
+}
+
+function resetSystem(){
+  currentUser=null;
+  checkedOut={};
+  mode="checkout";
+  document.getElementById("status").textContent="Scan or enter library card";
+  document.getElementById("list").innerHTML="";
+}
+</script>
+
+</body>
+</html>
